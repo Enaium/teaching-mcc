@@ -3,6 +3,7 @@
 *.class
 
 .idea
+run
 
 # Log file
 *.log
