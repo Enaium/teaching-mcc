@@ -4,6 +4,7 @@
 
 .idea
 run
+*.iml
 
 # Log file
 *.log
