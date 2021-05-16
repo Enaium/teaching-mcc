@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  * @author Enaium
@@ -23,15 +24,14 @@ public class Main {
         var version = "1.0";
         var java = System.getProperty("java.home");
         var gameVersion = "1.8.9";
-        var gameDir = new File(".",".minecraft");
+        var gameDir = new File(".", ".minecraft");
 
         var jvmArgs = "-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=16M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow -Xmn128m -Xmx1792m";
         var natives = "C:/Users/Enaium/AppData/Roaming/.minecraft/versions/1.8.9/natives";
         var mainClass = "net.minecraft.client.main.Main";
         var username = "Enaium";
         var titleVersion = "\" " + name + " " + version + " \"";
-        var assetsDir = "C:/Users/Enaium/AppData/Roaming/.minecraft/assets";
-        var assetIndex = "1.8";
+        var assetsDir = new File(gameDir, "assets");
         var uuid = "0";
         var accessToken = "0";
 
@@ -72,7 +72,7 @@ public class Main {
 
         var libraries = new StringBuilder();
 
-        var libraryDir = new File(gameDir,"libraries");
+        var libraryDir = new File(gameDir, "libraries");
 
         for (JsonElement jsonElement : gameJson.get("libraries").getAsJsonArray()) {
             var downloads = jsonElement.getAsJsonObject().get("downloads").getAsJsonObject();
@@ -81,7 +81,7 @@ public class Main {
                 var path = new File(libraryDir, artifact.get("path").getAsString());
                 libraries.append(path).append(";");
                 if (!path.exists()) {
-                    FileUtils.writeByteArrayToFile(path,IOUtils.toByteArray(new URL(artifact.get("url").getAsString())));
+                    FileUtils.writeByteArrayToFile(path, IOUtils.toByteArray(new URL(artifact.get("url").getAsString())));
                 }
             }
         }
@@ -92,9 +92,36 @@ public class Main {
         var text = java + "/bin/java.exe " + jvmArgs + " -Djava.library.path=" + natives + " -Dminecraft.launcher.brand="
                 + name + " -Dminecraft.launcher.version=" + version + " -cp " + libraries + " " + mainClass
                 + " --username " + username + " --version " + titleVersion +
-                " --gameDir " + gameDir + " --assetsDir " + assetsDir + " --assetIndex " + assetIndex
+                " --gameDir " + gameDir + " --assetsDir " + assetsDir + " --assetIndex " + gameVersion
                 + " --uuid " + uuid + " --accessToken " + accessToken + " --userProperties {} --userType mojang "
                 + "--width 854 --height 480";
+
+        var indexDir = new File(assetsDir, "indexes");
+        if (!indexDir.exists()) {
+            indexDir.mkdir();
+        }
+
+        var objectDir = new File(assetsDir, "objects");
+        if (!objectDir.exists()) {
+            objectDir.mkdir();
+        }
+
+        var indexContent = IOUtils.toString(new URL(gameJson.get("assetIndex").getAsJsonObject().get("url").getAsString()), StandardCharsets.UTF_8);
+        var indexObject = gson.fromJson(indexContent, JsonObject.class);
+        for (Map.Entry<String, JsonElement> objects : indexObject.get("objects").getAsJsonObject().entrySet()) {
+            var assetObject = gson.fromJson(objects.getValue(), AssetObject.class);
+            var objectIndexDir = new File(objectDir, assetObject.getHash().substring(0, 2));
+            if (!objectIndexDir.exists()) {
+                objectIndexDir.mkdir();
+            }
+            var objectIndexFile = new File(objectIndexDir, assetObject.getHash());
+
+            if (!objectIndexFile.exists()) {
+                FileUtils.writeByteArrayToFile(objectIndexFile, IOUtils.toByteArray(new URL("https://resources.download.minecraft.net/" + assetObject.getHash().substring(0, 2) + "/" + assetObject.getHash())));
+            }
+        }
+
+        FileUtils.writeStringToFile(new File(indexDir, gameVersion + ".json"), indexContent, StandardCharsets.UTF_8);
 
         try {
             var exec = Runtime.getRuntime().exec(text);
