@@ -6,13 +6,14 @@ import com.google.gson.JsonObject;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Enumeration;
+import java.util.Locale;
 import java.util.Map;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 /**
  * @author Enaium
@@ -27,7 +28,6 @@ public class Main {
         var gameDir = new File(".", ".minecraft");
 
         var jvmArgs = "-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=16M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow -Xmn128m -Xmx1792m";
-        var natives = "C:/Users/Enaium/AppData/Roaming/.minecraft/versions/1.8.9/natives";
         var mainClass = "net.minecraft.client.main.Main";
         var username = "Enaium";
         var titleVersion = "\" " + name + " " + version + " \"";
@@ -74,6 +74,8 @@ public class Main {
 
         var libraryDir = new File(gameDir, "libraries");
 
+        var nativeDir = new File(versionDir, "natives");
+
         for (JsonElement jsonElement : gameJson.get("libraries").getAsJsonArray()) {
             var downloads = jsonElement.getAsJsonObject().get("downloads").getAsJsonObject();
             if (downloads.has("artifact")) {
@@ -84,12 +86,53 @@ public class Main {
                     FileUtils.writeByteArrayToFile(path, IOUtils.toByteArray(new URL(artifact.get("url").getAsString())));
                 }
             }
+
+            if (downloads.has("classifiers")) {
+                var classifiers = downloads.get("classifiers").getAsJsonObject();
+                var nativeName = "natives-linux";
+                var osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+                if (osName.contains("win")) {
+                    nativeName = "natives-windows";
+                    if (!classifiers.has(nativeName)) {
+                        nativeName = "natives-windows-64";
+                    }
+                } else if (osName.contains("mac")) {
+                    nativeName = "natives-osx";
+                    if (!classifiers.has(nativeName)) {
+                        nativeName = "natives-macos";
+                    }
+                }
+
+                if (!classifiers.has(nativeName)) {
+                    continue;
+                }
+
+                var path = new File(libraryDir, classifiers.get(nativeName).getAsJsonObject().get("path").getAsString());
+                var url = classifiers.get(nativeName).getAsJsonObject().get("url").getAsString();
+
+                if (!path.exists()) {
+                    FileUtils.writeByteArrayToFile(path, IOUtils.toByteArray(new URL(url)));
+                } else {
+                    var jarFile = new JarFile(path);
+                    var entries = jarFile.entries();
+                    while (entries.hasMoreElements()) {
+                        var jarEntry = entries.nextElement();
+                        if (jarEntry.isDirectory() || jarEntry.getName().contains("META-INF")) {
+                            continue;
+                        }
+
+                        var inputStream = jarFile.getInputStream(jarEntry);
+                        FileUtils.writeByteArrayToFile(new File(nativeDir, jarEntry.getName()), IOUtils.toByteArray(inputStream));
+                        inputStream.close();
+                    }
+                    jarFile.close();
+                }
+            }
         }
 
         libraries.append(gameJarFile);
 
-
-        var text = java + "/bin/java.exe " + jvmArgs + " -Djava.library.path=" + natives + " -Dminecraft.launcher.brand="
+        var text = java + "/bin/java.exe " + jvmArgs + " -Djava.library.path=" + nativeDir + " -Dminecraft.launcher.brand="
                 + name + " -Dminecraft.launcher.version=" + version + " -cp " + libraries + " " + mainClass
                 + " --username " + username + " --version " + titleVersion +
                 " --gameDir " + gameDir + " --assetsDir " + assetsDir + " --assetIndex " + gameVersion
