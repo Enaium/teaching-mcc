@@ -9,9 +9,7 @@ import org.apache.commons.io.IOUtils;
 import java.io.*;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Enumeration;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -29,7 +27,7 @@ public class Main {
 
         var jvmArgs = "-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=16M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow -Xmn128m -Xmx1792m";
         var mainClass = "net.minecraft.client.main.Main";
-        var username = "Enaium";
+        var username = "Player" + new Random().nextInt(999);
         var titleVersion = "\" " + name + " " + version + " \"";
         var assetsDir = new File(gameDir, "assets");
         var uuid = "0";
@@ -132,13 +130,6 @@ public class Main {
 
         libraries.append(gameJarFile);
 
-        var text = java + "/bin/java.exe " + jvmArgs + " -Djava.library.path=" + nativeDir + " -Dminecraft.launcher.brand="
-                + name + " -Dminecraft.launcher.version=" + version + " -cp " + libraries + " " + mainClass
-                + " --username " + username + " --version " + titleVersion +
-                " --gameDir " + gameDir + " --assetsDir " + assetsDir + " --assetIndex " + gameVersion
-                + " --uuid " + uuid + " --accessToken " + accessToken + " --userProperties {} --userType mojang "
-                + "--width 854 --height 480";
-
         var indexDir = new File(assetsDir, "indexes");
         if (!indexDir.exists()) {
             indexDir.mkdir();
@@ -166,15 +157,41 @@ public class Main {
 
         FileUtils.writeStringToFile(new File(indexDir, gameVersion + ".json"), indexContent, StandardCharsets.UTF_8);
 
-        try {
-            var exec = Runtime.getRuntime().exec(text);
-            BufferedReader br = new BufferedReader(new InputStreamReader(exec.getInputStream()));
-            String line;
-            while ((line = br.readLine()) != null) {
-                System.out.println(line);
-            }
-        } catch (IOException exception) {
-            exception.printStackTrace();
+        var param = """
+                {
+                    "agent": {
+                        "name": "Minecraft",
+                        "version": 1
+                    },
+                    "username": "${username}",
+                    "password": "${password}",
+                    "clientToken": "${uuid}",
+                    "requestUser": true
+                }
+                """;
+
+        param = param.replace("${username}", Util.username);
+        param = param.replace("${password}", Util.password);
+        param = param.replace("${uuid}", UUID.randomUUID().toString());
+
+        var ret = gson.fromJson(Util.doPost(new URL("https://authserver.mojang.com/authenticate"), param), JsonObject.class);
+        var selectedProfile = ret.get("selectedProfile").getAsJsonObject();
+        username = selectedProfile.get("name").getAsString();
+        uuid = selectedProfile.get("id").getAsString();
+        accessToken = ret.get("accessToken").getAsString();
+
+        var text = java + "/bin/java.exe " + jvmArgs + " -Djava.library.path=" + nativeDir + " -Dminecraft.launcher.brand="
+                + name + " -Dminecraft.launcher.version=" + version + " -cp " + libraries + " " + mainClass
+                + " --username " + username + " --version " + titleVersion +
+                " --gameDir " + gameDir + " --assetsDir " + assetsDir + " --assetIndex " + gameVersion
+                + " --uuid " + uuid + " --accessToken " + accessToken + " --userProperties {} --userType mojang "
+                + "--width 854 --height 480";
+
+        var exec = Runtime.getRuntime().exec(text);
+        BufferedReader br = new BufferedReader(new InputStreamReader(exec.getInputStream()));
+        String line;
+        while ((line = br.readLine()) != null) {
+            System.out.println(line);
         }
     }
 }
